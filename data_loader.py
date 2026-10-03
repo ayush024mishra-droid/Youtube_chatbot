@@ -5,7 +5,11 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGener
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import PromptTemplate
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
+
+os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")  # Replace
 
 embedding_model = GoogleGenerativeAIEmbeddings(model="gemini-embedding-2")
 text_splitter = RecursiveCharacterTextSplitter(
