@@ -6,3 +6,4 @@ share
 .env
 .env.*
 !.env.example
+data_loader.py
