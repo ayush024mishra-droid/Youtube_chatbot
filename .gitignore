@@ -3,3 +3,6 @@ include
 Lib
 Scripts
 share
+.env
+.env.*
+!.env.example
