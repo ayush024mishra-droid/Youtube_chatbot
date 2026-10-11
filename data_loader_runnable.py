@@ -225,6 +225,94 @@ def ingest_video(url):
 
 
 
+def create_question_rewriter_chain():
+    prompt = PromptTemplate(
+        input_variables=["chat_history", "question"],
+        template="""
+You rewrite follow-up questions into standalone questions
+for retrieving information from a YouTube transcript.
+
+Use the conversation history only to resolve references
+such as "it", "that", "the second point", or "why".
+
+Rules:
+- Preserve the user's actual intent.
+- Do not answer the question.
+- Do not invent details.
+- If the question is already standalone, preserve its meaning.
+- Return only the rewritten question.
+
+Conversation history:
+{chat_history}
+
+Latest user question:
+{question}
+
+Standalone retrieval question:
+"""
+    )
+
+    return prompt | llm | StrOutputParser()
+
+
+def rewrite_question(question, chat_history):
+    if not chat_history.strip():
+        return question
+
+    chain = create_question_rewriter_chain()
+
+    rewritten = chain.invoke({
+        "chat_history": chat_history,
+        "question": question,
+    })
+
+    return rewritten.strip() or question
+
+
+
+def create_chat_rag_chain():
+    prompt = PromptTemplate(
+        input_variables=[
+            "context",
+            "chat_history",
+            "question",
+        ],
+        template="""
+You are a helpful assistant that answers questions
+about a YouTube video.
+
+Use the retrieved transcript context as your primary
+source of factual information.
+
+Rules:
+- Answer the user's actual question.
+- Use conversation history to understand follow-ups.
+- Ground factual claims in the provided transcript context.
+- Do not invent facts or claim the speaker said something
+  that is not supported by the context.
+- If the transcript context is insufficient, say so.
+- You may use conversation history to resolve references,
+  but do not treat earlier assistant answers as proof
+  of facts not supported by the transcript.
+- Be natural, concise, and conversational.
+- Do not repeat the entire previous answer unnecessarily.
+
+Conversation history:
+{chat_history}
+
+Retrieved transcript context:
+{context}
+
+Latest user question:
+{question}
+
+Answer:
+"""
+    )
+
+    return prompt | llm | StrOutputParser()
+
+
 
 # vid = get_video_id("https://www.youtube.com/watch?v=RgV57kDzcng&t=1s")
 
