@@ -9,6 +9,7 @@ from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
 import json
 from pathlib import Path
+import streamlit as st
 
 RETRIEVAL_TOP_K = 20
 LLM_CONTEXT_TOP_K = 12
@@ -18,7 +19,7 @@ RETRIEVAL_LOG_PATH = Path(__file__).with_name("retrieved_chunks.json")
 load_dotenv()
 import os
 
-os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")  # Load from .env file
+os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]  # Load from .env file
 import re
 
 def clean_transcript(transcript: str) -> str:

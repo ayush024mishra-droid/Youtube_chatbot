@@ -2,6 +2,7 @@ langchain
 langchain-community
 langchain-core
 youtube-transcript-api
+langchain-chroma
 chromadb
 pandas 
 numpy
