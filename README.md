@@ -32,7 +32,7 @@ Install the project dependencies:
 
 ```powershell
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt langchain-chroma langchain-google-genai langchain-text-splitters python-dotenv
+python -m pip install -r requirements.txt
 ```
 
 Create a `.env` file in the project directory and add your API key:

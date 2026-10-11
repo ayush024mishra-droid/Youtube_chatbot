@@ -3,8 +3,12 @@ langchain-community
 langchain-core
 youtube-transcript-api
 langchain-chroma
+langchain-google-genai
+langchain-text-splitters
 chromadb
-pandas 
+pandas
 numpy
 streamlit
 sentence-transformers
+python-dotenv
+torchvision
