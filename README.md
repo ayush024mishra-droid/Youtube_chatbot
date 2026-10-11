@@ -56,10 +56,13 @@ then select **Get Answer**.
 ## How it works
 
 The Streamlit interface in `app.py` calls the ingestion and retrieval helpers
-in `data_loader_runnable.py`. The app fetches the transcript, splits it into
+in `data_loaders_reranker.py`. The app fetches the transcript, splits it into
 chunks, stores the chunks and their embeddings in Chroma, and retrieves up to
-four relevant chunks for the question. The retrieved context is passed to the
-chat model to produce an answer.
+twenty candidates for each question. A small CPU cross-encoder
+(`cross-encoder/ms-marco-TinyBERT-L-2-v2`) reranks those candidates. The
+reranked chunks and scores are appended to `retrieved_chunks.json` as a JSON
+list; the top eight are passed to the chat model, and the top four are shown in
+the UI. The model is downloaded the first time reranking runs.
 
 The current code configures `gemini-embedding-2` for embeddings and
 `gemini-3.8-flash` for chat responses. Ensure these model names are available

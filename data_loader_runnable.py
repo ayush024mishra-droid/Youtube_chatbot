@@ -1,22 +1,65 @@
 from langchain_core.prompts import PromptTemplate
+from langchain_core.documents import Document
 from youtube_transcript_api import YouTubeTranscriptApi
 from urllib.parse import urlparse, parse_qs
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.runnables import (
-    RunnablePassthrough,
-    RunnableLambda
-)
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
+import json
+from pathlib import Path
+
+RETRIEVAL_TOP_K = 20
+LLM_CONTEXT_TOP_K = 12
+UI_DISPLAY_TOP_K = 4
+RETRIEVAL_LOG_PATH = Path(__file__).with_name("retrieved_chunks.json")
 
 load_dotenv()
 import os
 
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")  # Load from .env file
+import re
 
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+def clean_transcript(transcript: str) -> str:
+    transcript = re.sub(r"\[music\]", " ", transcript, flags=re.IGNORECASE)
+    transcript = transcript.replace(">>", " ")
+    return re.sub(r"\s+", " ", transcript).strip()
+
+def split_into_sentences(text):
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    return [s.strip() for s in sentences if s.strip()]
+
+def define_chunks(text, chunk_size=600, sentence_overlap=2):
+    chunks = []
+    current_chunk = []
+    sentences = split_into_sentences(text)
+
+    for sentence in sentences:
+        current_sentence = "".join(current_chunk + [sentence])
+        if len(current_sentence) <= chunk_size:
+            current_chunk.append(sentence)
+        else:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+            current_chunk = current_chunk[-sentence_overlap:] + [sentence]
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+    return chunks
+
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=100,
+    separators=[
+        "\n\n",
+        "\n",
+        ". ",
+        "? ",
+        "! ",
+        " ",
+        ""
+    ]
+)
 
 embedding_model = GoogleGenerativeAIEmbeddings(model="gemini-embedding-2")
 
@@ -160,11 +203,11 @@ def ingest_video(url):
         report_duplicate_chunks(vector_store, video_id)
         return vector_store
 
-    transcript = get_transcript(video_id)
+    transcript = clean_transcript(get_transcript(video_id))
     if not transcript:
         raise ValueError(f"No transcript found for video ID: {video_id}")
 
-    documents = text_splitter.create_documents([transcript])
+    documents = [Document(page_content=chunk) for chunk in define_chunks(transcript)]
     for doc in documents:
         doc.metadata["video_id"] = video_id
         doc.metadata["url"] = url
@@ -204,22 +247,14 @@ def build_context(res):
     """
     return "\n\n".join([doc.page_content for doc in res])
 
-def create_rag_chain(vector_store, video_id: str):
-    retriever = vector_store.as_retriever(
-        search_kwargs={"k": 4, "filter": {"video_id": video_id}}
-    )
-
+def create_rag_chain():
     prompt = PromptTemplate(
         input_variables=["context", "question"],
-        template="You are a helpful assistant. Use the following context to answer the question.\n\nContext: {context}\n\nQuestion: {question}\n\nAnswer:"
+        template="You are a helpful assistant. Use the following context to answer the question.Do not go outside the context specified and do not invent new facts. Always stay grounded to the provided context. If you are making any inference not in the context, state it explicitely.\n\nContext: {context}\n\nQuestion: {question}\n\nAnswer:"
     )
 
     chain = (
-        {
-            "context": retriever | RunnableLambda(build_context),
-            "question": RunnablePassthrough(),
-        }
-        | prompt
+        prompt
         | llm
         | StrOutputParser()
     )
@@ -228,15 +263,35 @@ def create_rag_chain(vector_store, video_id: str):
 
 
 def get_context_for_question(vector_store, question: str, video_id: str):
-    retriever = vector_store.as_retriever(
-        search_kwargs={"k": 4, "filter": {"video_id": video_id}}
+    scored_docs = vector_store.similarity_search_with_score(
+        question,
+        k=RETRIEVAL_TOP_K,
+        filter={"video_id": video_id},
     )
-    docs = retriever.invoke(question)
 
-    for i in range(len(docs)):
-        for j in range(i + 1, len(docs)):
-            print(
-                f"Chunk {i+1} vs Chunk {j+1}:",
-                docs[i].page_content == docs[j].page_content
-            )
-    return build_context(docs)
+    log_entry = {
+        "question": question,
+        "chunklist": [
+            {"chunk": doc.page_content, "score": float(score)}
+            for doc, score in scored_docs
+        ],
+    }
+    if RETRIEVAL_LOG_PATH.exists():
+        with RETRIEVAL_LOG_PATH.open("r", encoding="utf-8") as log_file:
+            retrieval_log = json.load(log_file)
+        if not isinstance(retrieval_log, list):
+            raise ValueError(f"Expected a JSON list in {RETRIEVAL_LOG_PATH}")
+    else:
+        retrieval_log = []
+    retrieval_log.append(log_entry)
+    temporary_log_path = RETRIEVAL_LOG_PATH.with_suffix(".json.tmp")
+    with temporary_log_path.open("w", encoding="utf-8") as log_file:
+        json.dump(retrieval_log, log_file, ensure_ascii=False, indent=2)
+    temporary_log_path.replace(RETRIEVAL_LOG_PATH)
+
+    for index, (doc, score) in enumerate(scored_docs, start=1):
+        print(f"Retrieved chunk {index} (distance: {score:.6f}): {doc.page_content}")
+
+    display_docs = [doc for doc, _ in scored_docs[:UI_DISPLAY_TOP_K]]
+    llm_docs = [doc for doc, _ in scored_docs[:LLM_CONTEXT_TOP_K]]
+    return build_context(llm_docs), build_context(display_docs)

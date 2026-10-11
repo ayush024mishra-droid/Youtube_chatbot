@@ -6,3 +6,4 @@ chromadb
 pandas 
 numpy
 streamlit
+sentence-transformers

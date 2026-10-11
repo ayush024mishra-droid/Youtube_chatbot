@@ -34,11 +34,13 @@ if st.button("Get Answer"):
            st.write("Processing the video and building the context. Please wait...")
            video_id = get_video_id(youtube_url)
            vector_store = ingest_video(youtube_url)
-           chain = create_rag_chain(vector_store, video_id)
-           context = get_context_for_question(vector_store, question, video_id)
+           chain = create_rag_chain()
+           llm_context, context = get_context_for_question(
+               vector_store, question, video_id
+           )
            
                        
-           answer = chain.invoke(question)
+           answer = chain.invoke({"context": llm_context, "question": question})
            
            st.write("Context:", context)
            st.write("Answer:", answer) 
